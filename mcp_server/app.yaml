@@ -12,3 +12,9 @@ env:
     value: "database"
   - name: LAKEBASE_SECRET_KEY
     value: "lakebase-url"
+  - name: WEATHER_TABLE_NAME
+    value: "weather_documents"
+  - name: EMBEDDINGS_TABLE_NAME
+    value: "weather_documents_embeddings"
+  - name: TRACING_TABLE_NAME
+    value: "mcp_tool_traces"
