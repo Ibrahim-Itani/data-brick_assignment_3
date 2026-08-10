@@ -54,7 +54,7 @@ def _get_end_user_email() -> str:
     # Fallback: use service principal (local development or non-App contexts)
     from databricks.sdk import WorkspaceClient
     w = WorkspaceClient()
-    return w.current_user.me().user_name or 'ibrahim.itani02@gmail.com'
+    return w.current_user.me().user_name
 
 def _get_or_create_session_id() -> str:
     """Get the current session ID or generate a new one."""
