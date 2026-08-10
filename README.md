@@ -508,11 +508,6 @@ To disable tracing (e.g., for performance testing):
 1. Remove the `@trace_tool` decorator from tool functions
 2. Or comment out the `_log_trace()` call in the decorator
 
-## Sample Screenshot 
-![Screenshot 2026-08-10 at 2.57.25 pm.png](./Screenshot 2026-08-10 at 2.57.25 pm.png "Screenshot 2026-08-10 at 2.57.25 pm.png")
-
-![Screenshot 2026-08-10 at 3.04.50 pm.png](./Screenshot 2026-08-10 at 3.04.50 pm.png "Screenshot 2026-08-10 at 3.04.50 pm.png")
-
 ## License
 
 See LICENSE file for details.
