@@ -1,11 +1,11 @@
 # Weather MCP Server - DataExpert Bootcamp Assignment 3
 
-A Model Context Protocol (MCP) server that provides weather data and intelligent travel recommendations through the Databricks AI platform. This server integrates real-time weather data from Open-Meteo API and semantic search capabilities over historical weather documents stored in Lakebase Postgres.
+A Model Context Protocol (MCP) server that provides weather data and intelligent travel recommendations through the Databricks AI platform. This server integrates real-time weather data from Open-Meteo and exposes tools the Databricks Assistant can call via the MCP protocol.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────┐
 │                     Databricks AI Platform                      │
 │  ┌───────────────────────────────────────────────────────────┐  │
 │  │              Databricks Assistant (Genie)                 │  │
@@ -36,7 +36,7 @@ A Model Context Protocol (MCP) server that provides weather data and intelligent
 │                  │                │  • mcp_tool_traces         │  │
 │                  │                │    (observability)         │  │
 │                  │                └───────────────────────────┘  │
-└──────────────────┼───────────────────────────────────────────────┘
+└──────────────────┼──────────────────────────────────────────────┘
                    │
                    │ HTTPS
                    │
@@ -260,26 +260,34 @@ CREATE INDEX idx_traces_user ON production.mcp_tool_traces(user_email);
 CREATE INDEX idx_traces_timestamp ON production.mcp_tool_traces(timestamp DESC);
 ```
 
-### 3. Configure Environment Variables
+### 3. Configure app.yaml (Databricks App configuration)
 
-Create an `app.yaml` file in the `mcp_server/` directory:
+Create an `app.yaml` file in the `mcp_server/` directory. The repository already includes `mcp_server/app.yaml`; it contains the command, resources, and environment variable names used when deploying the Databricks App. The values in the repository's `mcp_server/app.yaml` are:
+
 ```yaml
 command:
-  - python
-  - weather_mcp_server.py
+  - "python"
+  - "weather_mcp_server.py"
+
+resources:
+  - name: requirements
+    source:
+      path: ./requirements.txt
 
 env:
-  - name: WEATHER_TABLE_NAME
-    value: "production.weather_documents"
-  - name: EMBEDDINGS_TABLE_NAME
-    value: "production.weather_documents_embeddings"
-  - name: TRACING_TABLE_NAME
-    value: "production.mcp_tool_traces"
-  - name: EMBEDDING_MODEL
-    value: "sentence-transformers/all-MiniLM-L6-v2"
   - name: LAKEBASE_SECRET_SCOPE
     value: "database"
+  - name: LAKEBASE_SECRET_KEY
+    value: "lakebase-url"
+  - name: WEATHER_TABLE_NAME
+    value: "weather_documents"
+  - name: EMBEDDINGS_TABLE_NAME
+    value: "weather_documents_embeddings"
+  - name: TRACING_TABLE_NAME
+    value: "mcp_tool_traces"
 ```
+
+Note: the `app.yaml` in the repository uses simple table names (no `production.` schema prefix) and expects a single secret key name (`LAKEBASE_SECRET_KEY`) stored in the scope named by `LAKEBASE_SECRET_SCOPE`. If you prefer schema-qualified table names or additional env vars (for example, an embedding model name), add them to `mcp_server/app.yaml` before deploying.
 
 ### 4. Set Up Databricks Secrets (for Lakebase)
 
@@ -310,6 +318,8 @@ w.secrets.put_secret(
     string_value=base64.b64encode(b"/sql/1.0/endpoints/...").decode()
 )
 ```
+
+(When deploying via Databricks Apps you can also place a single Lakebase connection URL in the secret referenced by `LAKEBASE_SECRET_KEY` if your deployment prefers a single secret.)
 
 ### 5. Install Dependencies
 
