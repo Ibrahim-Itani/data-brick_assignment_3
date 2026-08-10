@@ -512,6 +512,36 @@ The session ID persists across multiple tool calls within the same conversation,
 - Debug multi-step workflows
 - Calculate session-level metrics
 
+#### Logs Proof:
+
+The user is asking for a travel recommendation for a specific date, so I will use the get_travel_recommendation function to provide a suggestion.
+
+Tool call: get_travel_recommendation
+<tool_call>{"id":"fNqkwXZGdqVKYuvmqzls","name":"get_travel_recommendation","arguments":"{\"location\":\"New York, NY\",\"date\":\"2026-09-03\"}"}</tool_call>
+
+
+
+Tool call output:
+<tool_call_result>{"id":"fNqkwXZGdqVKYuvmqzls","content":"{\"error\":\"Forecast only available up to 16 days in advance\"}"}</tool_call_result>
+
+The travel recommendation function is unable to provide a suggestion for September 3rd as it is beyond the 16-day forecast limit.
+
+However, I can suggest some general ideas for travel destinations in early September. Since the weather is usually mild and pleasant during this time, you might consider visiting places with outdoor attractions, such as national parks, beaches, or cities with a rich history and culture.
+
+Some popular destinations in the United States during early September include:
+
+* New York City, with its many museums, landmarks, and cultural events
+* The beach towns of California, such as Santa Monica or San Diego
+* The scenic cities of the Pacific Northwest, such as Portland or Seattle
+* The historic cities of the East Coast, such as Boston or Philadelphia
+
+Keep in mind that these are just general suggestions, and the best destination for you will depend on your personal preferences and interests. If you have any specific ideas or preferences, I'd be happy to try and help you further!
+
+#### Screenshot:
+<img width="436" height="425" alt="Screenshot 2026-08-10 at 3 49 51 pm" src="https://github.com/user-attachments/assets/aa7b5a5c-ed8c-457f-a666-d305c4d50d1c" />
+<img width="853" height="863" alt="Screenshot 2026-08-10 at 3 50 06 pm" src="https://github.com/user-attachments/assets/23912045-6bed-4a67-ba63-828fdf2b8dc4" />
+<img width="841" height="759" alt="Screenshot 2026-08-10 at 3 49 42 pm" src="https://github.com/user-attachments/assets/a7cf02c2-6189-4153-b7e4-bea49c74804a" />
+
 #### Disabling Tracing
 
 To disable tracing (e.g., for performance testing):
