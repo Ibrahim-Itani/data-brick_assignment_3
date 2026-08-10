@@ -1,6 +1,11 @@
 import os
 import logging
+import uuid
+import time
+import json
 from contextvars import ContextVar
+from functools import wraps
+from typing import Any, Callable
 
 from fastmcp import FastMCP
 from sentence_transformers import SentenceTransformer
@@ -32,6 +37,12 @@ EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "sentence-transformers/all-M
 # Context variable to store request headers for accessing end-user identity
 _request_context: ContextVar[dict] = ContextVar('request_context', default={})
 
+# Context variable to store session ID for tracing
+_session_id: ContextVar[str] = ContextVar('session_id', default=None)
+
+# Table name for tracing
+TRACING_TABLE_NAME = os.environ.get("TRACING_TABLE_NAME", "mcp_tool_traces")
+
 def _get_end_user_email() -> str:
     """Get the actual end user's email from request headers, or fallback to service principal."""
     # Try to get from X-Forwarded-User header (Databricks App context)
@@ -45,11 +56,104 @@ def _get_end_user_email() -> str:
     w = WorkspaceClient()
     return w.current_user.me().user_name or 'ibrahim.itani02@gmail.com'
 
+def _get_or_create_session_id() -> str:
+    """Get the current session ID or generate a new one."""
+    session_id = _session_id.get()
+    if session_id is None:
+        session_id = str(uuid.uuid4())
+        _session_id.set(session_id)
+        logger.info(f"Generated new session ID: {session_id}")
+    return session_id
 
-mcp = FastMCP("Mateo-weater-recommendation")
+def _log_trace(tool_name: str, parameters: dict, result: Any, duration_ms: float, error: str = None):
+    """Log a tool invocation to the tracing table."""
+    try:
+        session_id = _get_or_create_session_id()
+        user_email = _get_end_user_email()
+        
+        # Serialize result and parameters to JSON
+        params_json = json.dumps(parameters)
+        result_json = json.dumps(result) if result is not None else None
+        
+        trace_data = {
+            "session_id": session_id,
+            "tool_name": tool_name,
+            "user_email": user_email,
+            "parameters": params_json,
+            "result": result_json,
+            "duration_ms": duration_ms,
+            "error": error,
+            "timestamp": "NOW()"
+        }
+        
+        # Insert into tracing table
+        sql = f"""
+            INSERT INTO {TRACING_TABLE_NAME} 
+            (session_id, tool_name, user_email, parameters, result, duration_ms, error, timestamp)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+        """
+        
+        lakebase.run_write(
+            sql,
+            (
+                trace_data["session_id"],
+                trace_data["tool_name"],
+                trace_data["user_email"],
+                trace_data["parameters"],
+                trace_data["result"],
+                trace_data["duration_ms"],
+                trace_data["error"]
+            )
+        )
+        logger.info(f"Logged trace for {tool_name} in session {session_id}")
+    except Exception as e:
+        # Don't fail the actual tool call if tracing fails
+        logger.error(f"Failed to log trace: {e}")
+
+def trace_tool(func: Callable) -> Callable:
+    """Decorator to automatically trace MCP tool invocations."""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        tool_name = func.__name__
+        start_time = time.time()
+        error = None
+        result = None
+        
+        try:
+            # Capture parameters
+            parameters = {}
+            # Get parameter names from function signature
+            import inspect
+            sig = inspect.signature(func)
+            param_names = list(sig.parameters.keys())
+            
+            # Map positional args to parameter names
+            for i, arg in enumerate(args):
+                if i < len(param_names):
+                    parameters[param_names[i]] = arg
+            
+            # Add keyword args
+            parameters.update(kwargs)
+            
+            # Execute the actual tool
+            result = func(*args, **kwargs)
+            return result
+        except Exception as e:
+            error = str(e)
+            logger.error(f"Tool {tool_name} failed: {e}")
+            raise
+        finally:
+            # Log the trace
+            duration_ms = (time.time() - start_time) * 1000
+            _log_trace(tool_name, parameters, result, duration_ms, error)
+    
+    return wrapper
+
+
+mcp = FastMCP("Mateo-weather-recommendation")
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
-    """Middleware to capture HTTP headers containing end-user identity."""
+    """Middleware to capture HTTP headers and generate session IDs."""
     async def dispatch(self, request: Request, call_next):
         # Capture headers that Databricks injects with user identity
         headers = {
@@ -57,9 +161,19 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             'x-forwarded-email': request.headers.get('x-forwarded-email'),
         }
         _request_context.set(headers)
+        
+        # Generate a new session ID for this request if not already set
+        # In a real MCP server, you might want to tie this to a conversation ID
+        # from the MCP protocol headers
+        if _session_id.get() is None:
+            new_session_id = str(uuid.uuid4())
+            _session_id.set(new_session_id)
+            logger.info(f"New session started: {new_session_id}")
+        
         response = await call_next(request)
         return response
 @mcp.tool
+@trace_tool
 def get_current_weather(location: str) -> dict:
     """
     Get the weather conditions from Open-Mateo.
@@ -73,6 +187,7 @@ def get_current_weather(location: str) -> dict:
     return weather_broker.get_current_weather(location)
 
 @mcp.tool
+@trace_tool
 def get_forecast(location: str, days: float) -> dict:
     """
     Gets a multi day forecast for the next N days.
@@ -87,23 +202,37 @@ def get_forecast(location: str, days: float) -> dict:
     return weather_broker.get_forecast(location, days)
 
 @mcp.tool
+@trace_tool
 def get_travel_recommendation(location: str, date: str) -> dict:
-    return weather_broker.get_travel_recommendation(location,date)
-
-
-def vector_search(query: str, limit: int = 10) -> dict:
     """
-    Semantic search over weather news using vector embeddings.
-    
-    Accepts a text query, computes its embedding, and returns the most similar
-    documents and chunks from Lakebase using pgvector's cosine similarity.
+    Get travel recommendations for a location on a specific date.
     
     Args:
-        query: Natural language search query (e.g. "tech company earnings")
+        location: city name and state.
+        date: travel date in YYYY-MM-DD format.
+        
+    Returns:
+        A dict with travel assessment, recommendations, and items to bring.
+    """
+    return weather_broker.get_travel_recommendation(location, date)
+
+
+@mcp.tool
+@trace_tool
+def vector_search(query: str, limit: int = 10) -> dict:
+    """
+    Semantic search over weather documents using vector embeddings.
+    
+    Accepts a text query, computes its embedding, and returns the most similar
+    weather documents from Lakebase using pgvector's cosine similarity.
+    
+    Args:
+        query: Natural language search query (e.g. "severe storm warnings" or "heat advisory")
         limit: Maximum number of results to return (default 10)
     
     Returns:
-        A dict with query, documents, chunks, and model name
+        A dict with query, documents (id, location, headline, narrative_text, source_type, 
+        published_utc, issued_at, payload, model_name, similarity score), and embedding model name
     """
     if not query or not query.strip():
         return {"error": "Query text is required"}
@@ -121,14 +250,16 @@ def vector_search(query: str, limit: int = 10) -> dict:
             f"""
             SELECT 
                 e.id,
-                e.ticker,
-                e.title,
+                e.location,
+                e.headline,
                 e.published_utc,
                 e.model_name,
-                1 - (e.embedding <=> %s::vector) as similarity,
-                d.description,
-                d.article_url,
-                d.sentiment
+                e.embedded_at,
+                d.source_type,
+                d.narrative_text,
+                d.issued_at,
+                d.payload,
+                1 - (e.embedding <=> %s::vector) as similarity
             FROM {EMBEDDINGS_TABLE_NAME} e
             LEFT JOIN {WEATHER_TABLE_NAME} d ON e.id = d.id
             ORDER BY e.embedding <=> %s::vector
