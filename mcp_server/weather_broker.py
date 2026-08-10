@@ -23,11 +23,6 @@ _w = WorkspaceClient()
 GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 
-def _secret(key: str) -> str:
-    """Fetch and base64-decode a value from the Databricks secret scope."""
-    secret = _w.secrets.get_secret(scope=_SECRET_SCOPE, key=key)
-    return base64.b64decode(secret.value).decode("utf-8")
-
 def _geocode_location(location: str) -> Dict[str, float]:
     """
     Convert a location name (e.g., 'San Francisco, CA') to latitude/longitude.
